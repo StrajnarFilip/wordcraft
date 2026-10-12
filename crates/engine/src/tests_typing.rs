@@ -266,6 +266,46 @@ fn ordinals_become_superscript() {
 }
 
 #[test]
+fn enter_drops_superscript_and_subscript_but_keeps_bold() {
+    // Word: typing on the line after Enter is on the baseline, even when the line above ended
+    // scripted; bold, italic and the rest carry over (#992).
+    for (cmd, script) in [("format.superscript", VertAlign::Superscript), ("format.subscript", VertAlign::Subscript)] {
+        let mut s = s();
+        run(&mut s, "format.bold", json!({}));
+        run(&mut s, cmd, json!({}));
+        typ(&mut s, "ab");
+        assert_eq!(s.doc.para_at(&s.sel.focus).unwrap().props_of_char(0).vert_align, Some(script), "{cmd} applies to typing");
+        typ(&mut s, "\ncd");
+        let p = s.doc.para_at(&s.sel.focus).unwrap();
+        assert_eq!(p.text, "cd", "{cmd}");
+        assert_eq!(p.props_of_char(0).vert_align, None, "Enter drops {cmd}");
+        assert_eq!(p.props_of_char(0).bold, Some(true), "bold carries over Enter");
+    }
+}
+
+#[test]
+fn enter_after_scripted_text_drops_the_script() {
+    // Nothing waiting at the caret (a file just opened, a click): Enter still leaves the
+    // script on the line above (#992).
+    let mut s = typed("ab");
+    s.doc.format_range(&Pos::body(0, 1), &Pos::body(0, 2), &|c| c.vert_align = Some(VertAlign::Superscript)).unwrap();
+    typ(&mut s, "\nc");
+    let p = s.doc.para_at(&s.sel.focus).unwrap();
+    assert_eq!(p.props_of_char(0).vert_align, None);
+}
+
+#[test]
+fn enter_that_ends_a_list_drops_the_script() {
+    let mut s = typed("* a\n");
+    run(&mut s, "format.superscript", json!({}));
+    typ(&mut s, "\nb");
+    let p = s.doc.para_at(&s.sel.focus).unwrap();
+    assert_eq!(p.text, "b");
+    assert_eq!(p.props.numbering.filter(|n| n.num != 0), None, "the list ended");
+    assert_eq!(p.props_of_char(0).vert_align, None);
+}
+
+#[test]
 fn web_addresses_become_links() {
     let mut s = typed("see https://example.org/log, then ");
     let p = s.doc.para_at(&Pos::body(0, 0)).unwrap();

@@ -360,10 +360,25 @@ fn split_para_as(s: &mut Session, at: &Pos, enter: bool) -> Result<Pos, CmdError
         } else {
             leave_list(para);
         }
+        // Word: Enter drops superscript/subscript (#992).
+        para.mark.vert_align = None;
+        drop_script_at_caret(s);
         return Ok(at.clone());
     }
     let mark_revs = s.doc.para_at(at).map(|p| (p.mark.ins, p.mark.del)).unwrap_or_default();
     let new = s.doc.split_paragraph(at)?;
+    if enter {
+        // Word: Enter drops superscript/subscript, so typing on the new line is on the
+        // baseline even when the split point was scripted; bold, italic and the rest carry
+        // over (#992). The new paragraph's mark holds what typing at its start would get.
+        if let Ok(p) = s.doc.para_mut(new.story, &new.path)
+            && p.mark.vert_align.is_some()
+        {
+            p.mark.vert_align = None;
+            p.touch();
+        }
+        drop_script_at_caret(s);
+    }
     if at_end && let Some(st) = style.as_deref() {
         let next = s.doc.styles.get(st).and_then(|x| x.next.clone());
         if let Some(n) = next
@@ -387,6 +402,14 @@ fn split_para_as(s: &mut Session, at: &Pos, enter: bool) -> Result<Pos, CmdError
         (t.mark.ins, t.mark.del) = mark_revs;
     }
     Ok(new)
+}
+
+/// Word: Enter drops superscript/subscript from the formatting waiting at the caret (#992);
+/// the rest (bold, italic, colour…) carries into the next paragraph like before.
+fn drop_script_at_caret(s: &mut Session) {
+    if let Some(p) = &mut s.pending {
+        p.vert_align = None;
+    }
 }
 
 /// ISO-8601 timestamp (UTC, seconds) for `secs` since the Unix epoch.
