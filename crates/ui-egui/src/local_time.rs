@@ -1,6 +1,7 @@
-//! Comment times in the user's own time zone. A document keeps a comment's time as written, and
-//! its UTC time beside it when it knows it (`w16cex:dateUtc`, which WordCraft writes for the
-//! comments it stamps). The Comments pane and the balloons show it in local time, as Word does.
+//! Times in the user's own time zone. A document keeps a comment's time as written, and its UTC
+//! time beside it when it knows it (`w16cex:dateUtc`, which WordCraft writes for the comments it
+//! stamps). The Comments pane and the balloons show it in local time, as Word does, and File ›
+//! Home greets by the local hour (#4870).
 
 /// Minutes to add to UTC for local time at Unix time `secs` (east of Greenwich is positive).
 fn offset_minutes(secs: i64) -> i32 {
@@ -18,6 +19,19 @@ fn offset_minutes(secs: i64) -> i32 {
     };
     // Real zones are within a day of UTC.
     minutes.clamp(-24 * 60, 24 * 60)
+}
+
+/// The hour of the day on the user's clock, 0–23. File › Home's greeting goes by it: the UTC
+/// hour greeted São Paulo with "Good afternoon" at 10:13 (#4870).
+pub(crate) fn local_hour() -> u32 {
+    hour_at(wordcraft_engine::cmd::now_unix(), offset_minutes)
+}
+
+/// The local hour at Unix time `utc`, with `offset` giving the zone's minutes east of UTC.
+fn hour_at(utc: u64, offset: impl Fn(i64) -> i32) -> u32 {
+    let utc = i64::try_from(utc).unwrap_or(i64::MAX);
+    let local = utc.saturating_add(i64::from(offset(utc)) * 60);
+    u32::try_from(local.rem_euclid(86_400) / 3600).unwrap_or(0)
 }
 
 /// A comment's time for the pane and the balloons: `YYYY-MM-DD HH:MM` in local time. The UTC
@@ -217,5 +231,29 @@ mod tests {
     fn the_local_offset_is_a_real_zone() {
         let m = offset_minutes(1_760_000_000);
         assert!((-24 * 60..=24 * 60).contains(&m), "{m}");
+    }
+
+    /// #4870: the hour File › Home greets by is the one on the user's clock. 13:13 UTC was
+    /// 10:13 in São Paulo, morning, where the UTC hour said afternoon.
+    #[test]
+    fn the_greeting_hour_is_the_local_one() {
+        let sao_paulo = |_: i64| -3 * 60;
+        let tokyo = |_: i64| 9 * 60;
+        let kolkata = |_: i64| 5 * 60 + 30;
+        let at_1313 = 1_793_279_615; // 2026-10-29T13:13:35Z
+        assert_eq!(hour_at(at_1313, |_| 0), 13);
+        assert_eq!(hour_at(at_1313, sao_paulo), 10);
+        assert_eq!(hour_at(at_1313, tokyo), 22);
+        // Across midnight both ways, and a zone half an hour off the hour.
+        let at_0145 = 1_793_238_300; // 2026-10-29T01:45:00Z
+        assert_eq!(hour_at(at_0145, sao_paulo), 22);
+        assert_eq!(hour_at(at_0145, kolkata), 7);
+        let at_2330 = 1_793_316_600; // 2026-10-29T23:30:00Z
+        assert_eq!(hour_at(at_2330, kolkata), 5);
+        assert_eq!(hour_at(at_2330, |_| -24 * 60), 23);
+        // The epoch (`now_unix` gives it for a clock before 1970) and a time past i64 are hours too.
+        assert_eq!(hour_at(0, sao_paulo), 21);
+        assert!(hour_at(u64::MAX, tokyo) < 24);
+        assert!(local_hour() < 24);
     }
 }

@@ -350,6 +350,32 @@ fn template_search_matches_labels_case_insensitively() {
     assert!(ids("no such template").is_empty());
 }
 
+/// #4870: Home says good morning until noon, good afternoon until 18:00 and good evening after,
+/// by the hour on the user's clock (`local_time::local_hour`), not the UTC hour.
+#[test]
+fn home_greets_by_the_local_hour() {
+    let by_hour: Vec<&str> = (0..24).map(super::greeting).collect();
+    assert!(by_hour[..12].iter().all(|g| *g == "Good morning"), "{by_hour:?}");
+    assert!(by_hour[12..18].iter().all(|g| *g == "Good afternoon"), "{by_hour:?}");
+    assert!(by_hour[18..].iter().all(|g| *g == "Good evening"), "{by_hour:?}");
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+    a.run("ui.backstage", json!({"value": true, "page": "home"})).unwrap();
+    let before = crate::local_time::local_hour();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    h.run_steps(4);
+    let after = crate::local_time::local_hour();
+    // The hour may turn while the page draws.
+    let shown = [before, after].map(super::greeting);
+    assert!(shown.iter().any(|g| h.query_by_label(g).is_some()), "Home greets with {shown:?}");
+}
+
 fn personal_dir(tag: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("wc-ui-personal-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
