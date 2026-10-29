@@ -18,6 +18,49 @@ fn citations_and_bibliography() {
     assert!(s.doc.plain_text(StoryRef::Body).contains("[1]"));
 }
 
+/// #4848: a corporate author is cited and listed as written, in every style: never turned into
+/// a surname and initials ("Organization, W. H."), never left out for the title. Its tag and its
+/// place in an author-sorted list come from the name too.
+#[test]
+fn a_corporate_author_is_cited_and_listed_as_written() {
+    let mut s = Session::new(wordcraft_doc::Document::new());
+    s.run("text.insert", &json!({"text": "Hearing loss is common "})).unwrap();
+    let who = "World Health Organization";
+    s.run("references.citation", &json!({"source": {"kind": "report", "corporate": who, "title": "World report on hearing", "year": "2021", "publisher": "WHO Press", "city": "Geneva"}}))
+        .unwrap();
+    s.run("text.insert", &json!({"text": " and rising "})).unwrap();
+    s.run("references.citation", &json!({"source": {"author": "Adams, Kim", "title": "Quiet Rooms", "year": "2019"}})).unwrap();
+    s.run("text.newParagraph", &json!({})).unwrap();
+    s.run("references.bibliography", &json!({})).unwrap();
+    assert_eq!(s.doc.sources[0].tag, "Wor21", "the tag starts with the corporate name");
+    let t = s.doc.plain_text(StoryRef::Body);
+    assert!(t.contains(&format!("({who}, 2021)")), "{t}");
+    assert!(t.contains(&format!("{who}. (2021). World report on hearing. WHO Press.")), "{t}");
+    // Sorted by the corporate name: Adams before World.
+    let adams = t.find("Adams, K. (2019)").unwrap_or(usize::MAX);
+    let world = t.find(&format!("{who}. (2021)")).unwrap_or(0);
+    assert!(adams < world, "{t}");
+    for style in [
+        "MLA",
+        "Chicago",
+        "GB/T 7714",
+        "GOST (name sort)",
+        "GOST (title sort)",
+        "ISO 690 (author-date)",
+        "ISO 690 (numerical)",
+        "Harvard (Anglia)",
+        "Turabian",
+        "IEEE",
+        "SIST02",
+    ] {
+        s.run("references.citationStyle", &json!({"style": style})).unwrap();
+        let t = s.doc.plain_text(StoryRef::Body);
+        let entry = t.lines().find(|l| l.contains("World report on hearing")).unwrap_or_default();
+        assert!(entry.contains(who), "{style}: {entry}");
+        assert!(!entry.contains("Organization, W") && !entry.contains("ORGANIZATION, W"), "{style}: {entry}");
+    }
+}
+
 /// Updating fields in a document without generated lists leaves its styles alone: a new
 /// style would make the next layout start over from nothing.
 #[test]
