@@ -14,11 +14,11 @@ fn auto_tag(doc: &Document, src: &Source) -> String {
     (1u32..).map(|n| format!("{base}{n}")).find(|t| !taken(t)).unwrap_or(base)
 }
 
-/// The author of a source for matching untagged entries: the corporate author, else the editor
-/// when there is no author.
+/// The author of a source for matching untagged entries: the corporate author (which takes the
+/// author's place when a source is saved), else the author, else the editor.
 #[cfg(not(target_arch = "wasm32"))]
 fn by_author(x: &Source) -> &str {
-    [x.author.as_str(), x.corporate.trim(), x.editor.as_str()].into_iter().find(|w| !w.is_empty()).unwrap_or_default()
+    [x.corporate.trim(), x.author.as_str(), x.editor.as_str()].into_iter().find(|w| !w.is_empty()).unwrap_or_default()
 }
 
 /// The stem of a new source's tag, before `1`, `2`… are added while it is taken: the first three
