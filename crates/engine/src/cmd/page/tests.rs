@@ -429,4 +429,7 @@ fn page_number_format_keeps_or_clears_the_start() {
     let back = s.run("layout.pageNumberFormat", &json!({"format": "decimal", "start": 1})).unwrap();
     assert_eq!(back["pageNumFormat"], "decimal");
     assert_eq!(back["pageNumStart"], 1);
+    // Numbering can start at 0, as in Word: a cover page 0 makes the next page 1 (#4911).
+    let back = s.run("layout.pageNumberFormat", &json!({"start": 0})).unwrap();
+    assert_eq!((sect(&s).page_num_start, &back["pageNumStart"]), (Some(0), &json!(0)));
 }

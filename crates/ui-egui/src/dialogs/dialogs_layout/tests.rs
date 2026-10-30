@@ -91,6 +91,53 @@ fn page_numbers_dialog_sets_the_format_and_start() {
     assert_eq!((f.section, f.format.as_str(), f.start), (1, "lowerRoman", 9));
 }
 
+/// #4911: Start at takes 0, as in Word, so a cover page numbered 0 makes the next page 1. A 0
+/// typed in the dialog reaches the section (the field's lowest value was 1, so it turned into
+/// 1), and a section that starts at 0, as a Word file can, keeps it through the dialog's OK
+/// (the dialog showed 1 and OK wrote it).
+#[test]
+fn page_numbers_dialog_starts_at_zero() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::Queryable;
+    let mut a = app();
+    a.run("ui.dialog", json!({"name": "pageNumbers"})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    h.run_steps(4);
+    h.get_by_role_and_label(Role::RadioButton, "Start at:").click();
+    h.run_steps(2);
+    // The field is named by its radio button for screen readers.
+    h.get_by_role_and_label(Role::SpinButton, "Start at:").click();
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::SpinButton, "Start at:").type_text("0");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::Button, "OK").click();
+    h.run_steps(2);
+    assert!(h.state().dialog.is_none(), "OK closes the dialog");
+    assert_eq!(h.state().session.doc.last_section.page_num_start, Some(0), "the typed 0 is the start");
+
+    let shown = |h: &egui_kittest::Harness<'static, WordApp>| match &h.state().dialog {
+        Some(Dialog::Layout(d)) => match d.as_ref() {
+            LayoutDialog::PageNumbers(f) => Some((f.cont, f.start)),
+            _ => None,
+        },
+        _ => None,
+    };
+    h.state_mut().run("ui.dialog", json!({"name": "pageNumbers"})).unwrap();
+    h.run_steps(4);
+    assert_eq!(shown(&h), Some((false, 0)), "the dialog shows the section's 0");
+    h.get_by_role_and_label(Role::Button, "OK").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.doc.last_section.page_num_start, Some(0), "OK keeps the 0");
+}
+
 /// #755: the Line Numbers "From text" distance and the Hyphenation zone follow the
 /// File › Options unit (centimeters here); `params` sends points whatever the unit.
 #[test]

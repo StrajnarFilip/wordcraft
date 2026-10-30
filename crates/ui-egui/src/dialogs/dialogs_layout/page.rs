@@ -215,7 +215,7 @@ pub(super) fn size_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SizeForm) -> bool 
 
 /// The Format Page Numbers dialog's fields (#1113): the number format, and where numbering
 /// starts — `cont` numbers on from the section before (no `w:start`), else the pages start at
-/// `start`.
+/// `start`. That can be 0, as in Word: a cover page numbered 0 makes the next page 1 (#4911).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PageNumbersForm {
@@ -235,7 +235,7 @@ impl PageNumbersForm {
             section: wordcraft_engine::cmd::page::section_index_of_focus(&app.session),
             format: sp.page_num_format.ooxml().to_string(),
             cont: sp.page_num_start.is_none(),
-            start: sp.page_num_start.unwrap_or(1).clamp(1, 100_000),
+            start: sp.page_num_start.unwrap_or(1).min(100_000),
         }
     }
 
@@ -259,18 +259,19 @@ impl PageNumbersForm {
 pub(super) fn page_numbers_ui(app: &mut WordApp, ui: &mut Ui, f: &mut PageNumbersForm) -> bool {
     f.follow(app);
     ui.add_space(4.0);
-    ui.label(tl!("Number format"));
+    let format_label = ui.label(tl!("Number format"));
     let label = crate::dialogs_notes::FORMATS.iter().find(|(v, _)| *v == f.format.as_str()).map(|(_, l)| *l).unwrap_or_default();
-    craft_ui::ComboBox::from_id_salt("pnum_format").selected_text(label).width(150.0).show_ui(ui, |ui| {
+    let format = craft_ui::ComboBox::from_id_salt("pnum_format").selected_text(label).width(150.0).show_ui(ui, |ui| {
         for (v, l) in crate::dialogs_notes::FORMATS {
             ui.selectable_value(&mut f.format, v.to_string(), l);
         }
     });
+    format.response.labelled_by(format_label.id);
     heading(ui, "Page numbering");
     ui.radio_value(&mut f.cont, true, tl!("Continue from previous section"));
     ui.horizontal(|ui| {
-        ui.radio_value(&mut f.cont, false, tl!("Start at:"));
-        ui.add_enabled(!f.cont, egui::DragValue::new(&mut f.start).range(1..=100_000));
+        let start_at = ui.radio_value(&mut f.cont, false, tl!("Start at:"));
+        ui.add_enabled(!f.cont, egui::DragValue::new(&mut f.start).range(0..=100_000)).labelled_by(start_at.id);
     });
     let (ok, cancel) = buttons(ui, "OK", true);
     if ok {
